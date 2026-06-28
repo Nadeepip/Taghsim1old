@@ -873,24 +873,27 @@
 
         const game = {
             dividend: 0, divisor: 0, digits: [], stage: 0, subStep: 'SELECT', activeBox: null, helpUsed: false, mathSteps: [], currentRem: 0, lastRemRowIndex: -1,
+            isFailedStep: false,
             
             start() {
                 this.divisor = Math.floor(Math.random() * 8) + 2; this.dividend = Math.floor(Math.random() * 8000) + 1000;
                 this.digits = String(this.dividend).split('').map(Number); this.stage = 0; this.subStep = 'SELECT'; this.currentRem = 0; this.helpUsed = false;
                 this.mathSteps = Array(4).fill(null).map(() => ({ q: null, p: Array(4).fill(''), r: Array(4).fill('') })); this.lastRemRowIndex = -1;
+                this.isFailedStep = false;
                 const btn = getEl('btn-check'); btn.innerText = '✅ بررسی'; btn.className = 'btn btn-success'; btn.disabled = true;
+                btn.setAttribute('onclick', 'game.checkCurrentStep()');
                 this.saveState(); this.renderUI(); 
                 this.resetToNormalUI();
                 this.msg('روی اولین رقم سمت چپ (هزارتایی) کلیک کن.');
             },
             
             saveState() { 
-                localStorage.setItem(GAME_STATE_STORAGE, JSON.stringify({ div: this.dividend, dvr: this.divisor, digs: this.digits, stg: this.stage, sub: this.subStep, hlp: this.helpUsed, rem: this.currentRem, mStp: this.mathSteps, lrr: this.lastRemRowIndex })); 
+                localStorage.setItem(GAME_STATE_STORAGE, JSON.stringify({ div: this.dividend, dvr: this.divisor, digs: this.digits, stg: this.stage, sub: this.subStep, hlp: this.helpUsed, rem: this.currentRem, mStp: this.mathSteps, lrr: this.lastRemRowIndex, ifs: this.isFailedStep })); 
             },
             
             loadState() {
                 const saved = localStorage.getItem(GAME_STATE_STORAGE); if (!saved) return this.start(); const d = JSON.parse(saved); 
-                Object.assign(this, { dividend: d.div, divisor: d.dvr, digits: d.digs, stage: d.stg, subStep: d.sub, helpUsed: d.hlp, currentRem: d.rem, mathSteps: d.mStp, lastRemRowIndex: (d.lrr !== undefined ? d.lrr : -1) });
+                Object.assign(this, { dividend: d.div, divisor: d.dvr, digits: d.digs, stage: d.stg, subStep: d.sub, helpUsed: d.hlp, currentRem: d.rem, mathSteps: d.mStp, lastRemRowIndex: (d.lrr !== undefined ? d.lrr : -1), isFailedStep: (d.ifs !== undefined ? d.ifs : false) });
                 
                 this.renderUI();
                 
@@ -1067,7 +1070,7 @@
                 }
                 if (this.stage === 4) return this.msg('تمام شد.');
                 if (this.subStep !== 'SELECT') return this.msg('مرحله جاری رو کامل کن.', true);
-                if (idx !== this.stage) return this.msg(`نوبت رقم ${CONFIG.pvLabels[this.stage]} است.`, true);
+                if (idx !== this.stage) return this.msg(`نوبت رقم ${CONFIG.pvLabels[this.stage]} ist.`, true);
                 
                 if (idx > 0) {
                      let targetRowIdx = this.getLastActiveRowIdx(idx);
@@ -1104,6 +1107,49 @@
                 }
                 this.mathSteps[idx].p = Array(4).fill('');
                 this.mathSteps[idx].r = Array(4).fill('');
+            },
+
+            resetFailedStep() {
+                this.isFailedStep = false;
+                
+                if (this.subStep === 'MULTIPLY_P') {
+                    this.resetProductRow(this.stage);
+                    this.mathSteps[this.stage].q = null;
+                    
+                    const qBox = getEl(`q-${this.stage}`);
+                    if (qBox) {
+                        const valSpan = qBox.querySelector('.val');
+                        if (valSpan) valSpan.innerText = '';
+                        else qBox.innerText = '';
+                        qBox.classList.remove('has-val', 'wrong', 'correct', 'readonly');
+                    }
+                    
+                    this.subStep = 'QUOTIENT';
+                    this.activate(`q-${this.stage}`);
+                    this.msg('خارج قسمت را دوباره وارد کن.');
+                } 
+                else if (this.subStep === 'SUBTRACT') {
+                    const rRow = getEl(`row-r-${this.stage}`);
+                    if (rRow) {
+                        const visibleBoxes = Array.from(rRow.querySelectorAll('.box:not(.invisible-box)'));
+                        visibleBoxes.forEach(b => {
+                            b.innerText = '';
+                            b.classList.remove('has-val', 'wrong', 'correct');
+                        });
+                    }
+                    this.mathSteps[this.stage].r = Array(4).fill('');
+                    
+                    if (rRow) {
+                        const visibleBoxes = Array.from(rRow.querySelectorAll('.box:not(.invisible-box)'));
+                        if (visibleBoxes.length > 0) {
+                            this.activate(visibleBoxes[visibleBoxes.length - 1].id);
+                        }
+                    }
+                    this.msg('تفریق را دوباره بنویس.');
+                }
+                
+                this.updateCheckBtn();
+                this.saveState();
             },
 
             handleQuotientInput(val) {
@@ -1191,6 +1237,10 @@
             hideNumberPad() { getEl('number-pad').classList.add('hidden'); if (this.activeBox) getEl(this.activeBox).classList.remove('active-input'); this.activeBox = null; },
 
             inputDigit(n) {
+                if (this.isFailedStep) {
+                    this.resetFailedStep();
+                    return;
+                }
                 if (!this.activeBox && !app.state.isTutorial) return; 
                 let targetId = this.activeBox;
                 if (app.state.isTutorial) targetId = n.targetId; 
@@ -1231,6 +1281,10 @@
             },
             
             clearActiveBox() {
+                if (this.isFailedStep) {
+                    this.resetFailedStep();
+                    return;
+                }
                 const hasWrong = document.querySelector('.box.wrong') !== null;
                 
                 if (hasWrong || this.subStep === 'MULTIPLY_P') {
@@ -1331,10 +1385,28 @@
 
             updateCheckBtn() {
                 const btn = getEl('btn-check'); 
-                if (this.subStep === 'FINISH') { btn.innerText = '🏁 پایان'; btn.className = 'btn btn-finish'; btn.disabled = false; } 
-                else {
-                    btn.innerText = '✅ بررسی'; btn.className = 'btn btn-success';
-                    const full = this.isRowFull(); if ((this.subStep === 'MULTIPLY_P' || this.subStep === 'SUBTRACT') && full) { btn.disabled = false; this.msg('حالا دکمه بررسی رو بزن.'); } else { btn.disabled = true; }
+                if (this.subStep === 'FINISH') { 
+                    btn.innerText = '🏁 پایان'; 
+                    btn.className = 'btn btn-finish'; 
+                    btn.disabled = false; 
+                    btn.setAttribute('onclick', 'game.checkCurrentStep()');
+                } else if (this.isFailedStep) {
+                    btn.innerText = '❌ پاک کردن و تلاش مجدد'; 
+                    btn.className = 'btn btn-danger-reset'; 
+                    btn.disabled = false;
+                    btn.setAttribute('onclick', 'game.resetFailedStep()');
+                } else {
+                    btn.innerText = '✅ بررسی'; 
+                    btn.className = 'btn btn-success';
+                    btn.setAttribute('onclick', 'game.checkCurrentStep()');
+                    
+                    const full = this.isRowFull(); 
+                    if ((this.subStep === 'MULTIPLY_P' || this.subStep === 'SUBTRACT') && full) { 
+                        btn.disabled = false; 
+                        this.msg('حالا دکمه بررسی رو بزن.'); 
+                    } else { 
+                        btn.disabled = true; 
+                    }
                 }
             },
 
@@ -1368,11 +1440,13 @@
                          let rRow = getEl(`row-r-${this.stage}`);
                          const rBoxes = Array.from(rRow.querySelectorAll('.box:not(.invisible-box)'));
                          if(rBoxes.length > 0 && !app.state.isTutorial) this.activate(rBoxes[rBoxes.length - 1].id);
+                         this.isFailedStep = false;
                     } else {
                          qBox.classList.add('wrong');
                          visibleBoxes.forEach(b => b.classList.add('wrong')); 
                          correct = false; 
-                         this.msg('خارج قسمت یا حاصلضرب اشتباه است. دکمه پاک را بزن و دوباره تلاش کن.', true);
+                         this.isFailedStep = true;
+                         this.msg('خارج قسمت یا حاصلضرب اشتباه است. دکمه پاک کردن را بزن و دوباره تلاش کن.', true);
                     }
                     
                 } else if (this.subStep === 'SUBTRACT') {
@@ -1386,13 +1460,20 @@
                         getEl('btn-check').disabled = true;
                         const pRow = getEl(`row-p-${this.stage}`); if(pRow) pRow.classList.add('dimmed');
                         this.currentRem = rem; this.stage++; this.subStep = 'SELECT'; getEl('bracket').style.display = 'none'; 
-                        if (this.stage > 3) { this.msg('تمام شد! دکمه پایان رو بزن.'); this.subStep = 'FINISH'; this.updateCheckBtn(); } 
+                        if (this.stage > 3) { this.msg('تمام شد! دکمه پایان رو بزن.'); this.subStep = 'FINISH'; } 
                         else { 
                             if(app.state.isTutorial) { this.msg('بریم سراغ رقم بعدی.'); } else { this.msg(`رقم بعدی (${CONFIG.pvLabels[this.stage]}) رو انتخاب کن.`); }
                             this.updateSelectHighlight(); 
                         }
-                    } else { visibleBoxes.forEach(b => b.classList.add('wrong')); correct = false; this.msg('تفریق اشتباهه.', true); }
+                        this.isFailedStep = false;
+                    } else { 
+                        visibleBoxes.forEach(b => b.classList.add('wrong')); 
+                        correct = false; 
+                        this.isFailedStep = true;
+                        this.msg('تفریق اشتباهه. دکمه پاک کردن را بزن و دوباره تلاش کن.', true); 
+                    }
                 }
+                this.updateCheckBtn();
                 this.saveState();
             },
 
