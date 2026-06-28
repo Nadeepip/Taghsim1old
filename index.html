@@ -529,7 +529,7 @@
                         <span id="portal-prev-plays" style="font-weight:bold; color:#e67e22;">۰</span>
                     </div>
                     <div style="display:flex; justify-content:space-between; align-items:center;">
-                        <span>⭐ ستاره‌های ثبت‌شده:</span>
+                        <span>⭐ ستاره‌های ثبت‌شده قبلی:</span>
                         <span id="portal-prev-stars" style="font-weight:bold; color:#f39c12;">۰ ⭐</span>
                     </div>
                     <div style="display:flex; justify-content:space-between; align-items:center; font-weight:bold; color:#27ae60; border-top:1px dashed #bdc3c7; padding-top:8px; margin-top:5px;">
@@ -1084,10 +1084,94 @@
                 this.saveState();
             },
 
+            resetProductRow(idx) {
+                const rowP = getEl(`row-p-${idx}`);
+                if (rowP) {
+                    let sib = rowP.nextSibling;
+                    while (sib && (sib.classList.contains('subtraction-line') || sib.id === `row-r-${idx}`)) {
+                        let next = sib.nextSibling;
+                        sib.remove();
+                        sib = next;
+                    }
+                    rowP.remove();
+                }
+                this.mathSteps[idx].p = Array(4).fill('');
+                this.mathSteps[idx].r = Array(4).fill('');
+            },
+
+            handleQuotientInput(val) {
+                const total = this.getCurrentTotal();
+                let correctQ = Math.floor(total / this.divisor);
+                if (correctQ > 9) correctQ = 9;
+
+                const qBox = getEl(`q-${this.stage}`);
+
+                if (val === 0) {
+                    if (correctQ === 0) {
+                        this.mathSteps[this.stage].q = 0;
+                        qBox.querySelector('.val').innerText = toPersian(0);
+                        qBox.classList.add('correct', 'readonly', 'has-val');
+                        qBox.classList.remove('wrong');
+                        this.hideNumberPad();
+                        this.currentRem = total; 
+                        if(this.stage === 3) {
+                            this.msg('پایان تقسیم. دکمه بررسی رو بزن.');
+                            this.subStep = 'FINISH';
+                        } else {
+                            this.stage++;
+                            this.subStep = 'SELECT';
+                            this.msg(`چون نمیشه، ۰ گذاشتیم. حالا رقم بعدی (${CONFIG.pvLabels[this.stage]}) رو انتخاب کن.`);
+                            this.updateSelectHighlight();
+                        }
+                        this.updateCheckBtn();
+                        this.saveState();
+                    } else {
+                        qBox.querySelector('.val').innerText = toPersian(0);
+                        qBox.classList.add('wrong', 'has-val');
+                        this.msg('اشتباهه.', true);
+                        setTimeout(() => {
+                            qBox.querySelector('.val').innerText = '';
+                            qBox.classList.remove('wrong', 'has-val');
+                            this.mathSteps[this.stage].q = null;
+                            this.activate(`q-${this.stage}`);
+                        }, 1000);
+                    }
+                } else {
+                    this.mathSteps[this.stage].q = val;
+                    qBox.querySelector('.val').innerText = toPersian(val);
+                    qBox.classList.add('has-val');
+                    qBox.classList.remove('wrong');
+                    
+                    this.subStep = 'MULTIPLY_P';
+                    this.createMathRows(this.stage);
+                    this.msg('حاصلضرب خارج قسمت در مقسوم‌علیه را بنویس (از چپ).');
+                    
+                    const pRow = getEl(`row-p-${this.stage}`);
+                    if (pRow) {
+                        const boxes = Array.from(pRow.querySelectorAll('.box:not(.invisible-box)'));
+                        if (boxes.length > 0) {
+                            this.activate(boxes[0].id);
+                        }
+                    }
+                    this.updateCheckBtn();
+                    this.saveState();
+                }
+            },
+
             activate(id) {
                 if (app.state.isTutorial) return; 
                 if (getEl(id).classList.contains('readonly')) return; if (getEl(id).classList.contains('invisible-box')) return;
-                const parts = id.split('-'); if (parts[0] === 'q') { const idx = parseInt(parts[1]); if (idx !== this.stage) return; if (this.subStep !== 'QUOTIENT') return; }
+                const parts = id.split('-'); 
+                if (parts[0] === 'q') { 
+                    const idx = parseInt(parts[1]); 
+                    if (idx !== this.stage) return; 
+                    if (this.subStep === 'MULTIPLY_P') {
+                        this.resetProductRow(idx);
+                        this.subStep = 'QUOTIENT';
+                        this.updateCheckBtn();
+                    }
+                    if (this.subStep !== 'QUOTIENT') return; 
+                }
                 if (this.activeBox) getEl(this.activeBox).classList.remove('active-input'); this.activeBox = id; getEl(id).classList.add('active-input'); getEl('number-pad').classList.remove('hidden');
                 setTimeout(() => getEl(id).scrollIntoView({behavior: "smooth", block: "center", inline: "nearest"}), 100);
             },
@@ -1116,7 +1200,7 @@
                         } else {
                             this.createMathRows(this.stage); this.subStep = 'MULTIPLY_P'; this.msg('حالا جواب رو در مقسوم‌علیه ضرب می‌کنیم.'); 
                         }
-                     } else this.checkQuotientInstant(val); 
+                     } else this.handleQuotientInput(val); 
                 } 
                 else if (type === 'p') { this.mathSteps[s].p[i] = String(val); if(!app.state.isTutorial) { this.autoAdvance(type, s, i, false); } } 
                 else if (type === 'r') { this.mathSteps[s].r[i] = String(val); if(!app.state.isTutorial) { this.autoAdvance(type, s, i, true); } }
@@ -1126,36 +1210,70 @@
             },
             
             clearActiveBox() {
-                if(!this.activeBox) return; const el = getEl(this.activeBox); el.innerText = ''; el.classList.remove('has-val', 'wrong');
-                const [type, stg, idx] = this.activeBox.split('-'); const s = parseInt(stg); const i = parseInt(idx);
-                if(type === 'q') this.mathSteps[s].q = null; else if(type === 'p') this.mathSteps[s].p[i] = ''; else if(type === 'r') this.mathSteps[s].r[i] = '';
-                this.updateCheckBtn(); this.saveState();
+                const hasWrong = document.querySelector('.box.wrong') !== null;
+                
+                if (hasWrong || this.subStep === 'MULTIPLY_P') {
+                    if (this.subStep === 'MULTIPLY_P' || this.subStep === 'QUOTIENT') {
+                        this.resetProductRow(this.stage);
+                        this.mathSteps[this.stage].q = null;
+                        
+                        const qBox = getEl(`q-${this.stage}`);
+                        if (qBox) {
+                            qBox.querySelector('.val').innerText = '';
+                            qBox.classList.remove('has-val', 'wrong', 'correct', 'readonly');
+                        }
+                        
+                        this.subStep = 'QUOTIENT';
+                        this.activate(`q-${this.stage}`);
+                        this.msg('خارج قسمت را وارد کن.');
+                        this.updateCheckBtn();
+                        this.saveState();
+                        return;
+                    }
+                }
+                
+                if (hasWrong || this.subStep === 'SUBTRACT') {
+                    if (this.subStep === 'SUBTRACT') {
+                        const rRow = getEl(`row-r-${this.stage}`);
+                        if (rRow) {
+                            const visibleBoxes = Array.from(rRow.querySelectorAll('.box:not(.invisible-box)'));
+                            visibleBoxes.forEach(b => {
+                                b.innerText = '';
+                                b.classList.remove('has-val', 'wrong', 'correct');
+                            });
+                        }
+                        this.mathSteps[this.stage].r = Array(4).fill('');
+                        
+                        if (rRow) {
+                            const visibleBoxes = Array.from(rRow.querySelectorAll('.box:not(.invisible-box)'));
+                            if (visibleBoxes.length > 0) {
+                                this.activate(visibleBoxes[visibleBoxes.length - 1].id);
+                            }
+                        }
+                        this.msg('تفریق را دوباره بنویس.');
+                        this.updateCheckBtn();
+                        this.saveState();
+                        return;
+                    }
+                }
+
+                if(!this.activeBox) return;
+                const el = getEl(this.activeBox);
+                el.innerText = '';
+                el.classList.remove('has-val', 'wrong');
+                const [type, stg, idx] = this.activeBox.split('-');
+                const s = parseInt(stg);
+                const i = parseInt(idx);
+                if(type === 'q') this.mathSteps[s].q = null;
+                else if(type === 'p') this.mathSteps[s].p[i] = '';
+                else if(type === 'r') this.mathSteps[s].r[i] = '';
+                this.updateCheckBtn();
+                this.saveState();
             },
 
             getCurrentTotal() {
                 if (this.stage === 0) return this.digits[0];
                 return (this.currentRem * 10) + this.digits[this.stage];
-            },
-
-            checkQuotientInstant(n) {
-                const total = this.getCurrentTotal();
-                let correctQ = Math.floor(total / this.divisor);
-                if (correctQ > 9) correctQ = 9; 
-
-                if (n === correctQ) {
-                    this.mathSteps[this.stage].q = n; getEl(this.activeBox).classList.add('correct', 'readonly'); this.hideNumberPad();
-                    if (n === 0) {
-                        this.currentRem = total; 
-                        if(this.stage === 3) { this.msg('پایان تقسیم. دکمه بررسی رو بزن.'); this.subStep = 'FINISH'; this.updateCheckBtn(); } 
-                        else { this.stage++; this.subStep = 'SELECT'; this.msg(`چون نمیشه، ۰ گذاشتیم. حالا رقم بعدی (${CONFIG.pvLabels[this.stage]}) رو انتخاب کن.`); this.updateSelectHighlight(); }
-                    } else {
-                        this.createMathRows(this.stage); this.subStep = 'MULTIPLY_P'; this.msg('ضرب رو بنویس (از چپ).'); 
-                        const pRow = getEl(`row-p-${this.stage}`);
-                        const boxes = Array.from(pRow.querySelectorAll('.box:not(.invisible-box)'));
-                        if(boxes.length > 0) this.activate(boxes[0].id);
-                    }
-                    this.saveState();
-                } else { getEl(this.activeBox).classList.add('wrong'); this.msg('اشتباهه.', true); }
             },
 
             autoAdvance(type, s, i, isReverse) {
@@ -1196,12 +1314,22 @@
                 
                 let correct = true;
                 if (this.subStep === 'MULTIPLY_P') {
+                    const total = this.getCurrentTotal();
+                    let correctQ = Math.floor(total / this.divisor);
+                    if (correctQ > 9) correctQ = 9;
+                    const correctProd = correctQ * this.divisor;
+
+                    const qBox = getEl(`q-${this.stage}`);
                     const pRow = getEl(`row-p-${this.stage}`);
                     const visibleBoxes = Array.from(pRow.querySelectorAll('.box:not(.invisible-box)'));
                     let userNumStr = visibleBoxes.map(b => toEnglish(b.innerText)).join('');
                     let userNum = parseInt(userNumStr);
-                    
-                    if (userNum === prod) {
+
+                    const userQ = this.mathSteps[this.stage].q;
+
+                    if (userQ === correctQ && userNum === correctProd) {
+                         qBox.classList.add('correct', 'readonly');
+                         qBox.classList.remove('wrong');
                          visibleBoxes.forEach(b => { b.classList.add('correct', 'readonly'); b.classList.remove('wrong', 'active-input'); });
                          getEl('btn-check').disabled = true; this.subStep = 'SUBTRACT'; 
                          if(app.state.isTutorial) this.msg('حالا باید تفریق کنی.'); else this.msg('آفرین. تفریق کن (از راست).'); 
@@ -1210,7 +1338,10 @@
                          const rBoxes = Array.from(rRow.querySelectorAll('.box:not(.invisible-box)'));
                          if(rBoxes.length > 0 && !app.state.isTutorial) this.activate(rBoxes[rBoxes.length - 1].id);
                     } else {
-                         visibleBoxes.forEach(b => b.classList.add('wrong')); correct = false; this.msg('ضرب اشتباهه.', true);
+                         qBox.classList.add('wrong');
+                         visibleBoxes.forEach(b => b.classList.add('wrong')); 
+                         correct = false; 
+                         this.msg('خارج قسمت یا حاصلضرب اشتباه است. دکمه پاک را بزن و دوباره تلاش کن.', true);
                     }
                     
                 } else if (this.subStep === 'SUBTRACT') {
