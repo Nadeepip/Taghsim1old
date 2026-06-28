@@ -934,7 +934,7 @@
                 
                 for (let s = 1; s <= this.stage; s++) {
                      if (s === this.stage && this.subStep === 'SELECT') continue;
-                     let restoreRowIdx = this.getLastActiveRowIndex(s);
+                     let restoreRowIdx = this.getLastActiveRowIdx(s);
                      if (restoreRowIdx !== -1) {
                          const rBox = getEl(`r-${restoreRowIdx}-${s}`);
                          if (rBox) {
@@ -948,7 +948,7 @@
                 this.updateSelectHighlight();
             },
 
-            getLastActiveRowIndex(currentStage) {
+            getLastActiveRowIdx(currentStage) {
                 for (let i = currentStage - 1; i >= 0; i--) {
                     if (this.mathSteps[i].q !== 0 && this.mathSteps[i].q !== null) { return i; }
                 }
@@ -956,7 +956,7 @@
             },
             
             getTopCellForColumn(colIdx) {
-                let lastActive = this.getLastActiveRowIndex(this.stage);
+                let lastActive = this.getLastActiveRowIdx(this.stage);
                 if (lastActive === -1) { return getEl(`div-${colIdx}`); } 
                 else { return getEl(`r-${lastActive}-${colIdx}`); }
             },
@@ -1065,7 +1065,7 @@
                 if (idx !== this.stage) return this.msg(`نوبت رقم ${CONFIG.pvLabels[this.stage]} است.`, true);
                 
                 if (idx > 0) {
-                     let targetRowIdx = this.getLastActiveRowIndex(idx);
+                     let targetRowIdx = this.getLastActiveRowIdx(idx);
                      let targetCell = null;
                      if (targetRowIdx !== -1) { targetCell = getEl(`r-${targetRowIdx}-${idx}`); } 
                      
@@ -1109,7 +1109,10 @@
                 if (val === 0) {
                     if (correctQ === 0) {
                         this.mathSteps[this.stage].q = 0;
-                        qBox.querySelector('.val').innerText = toPersian(0);
+                        const valSpan = qBox.querySelector('.val');
+                        if (valSpan) valSpan.innerText = toPersian(0);
+                        else qBox.innerText = toPersian(0);
+                        
                         qBox.classList.add('correct', 'readonly', 'has-val');
                         qBox.classList.remove('wrong');
                         this.hideNumberPad();
@@ -1126,11 +1129,15 @@
                         this.updateCheckBtn();
                         this.saveState();
                     } else {
-                        qBox.querySelector('.val').innerText = toPersian(0);
+                        const valSpan = qBox.querySelector('.val');
+                        if (valSpan) valSpan.innerText = toPersian(0);
+                        else qBox.innerText = toPersian(0);
+                        
                         qBox.classList.add('wrong', 'has-val');
                         this.msg('اشتباهه.', true);
                         setTimeout(() => {
-                            qBox.querySelector('.val').innerText = '';
+                            if (valSpan) valSpan.innerText = '';
+                            else qBox.innerText = '';
                             qBox.classList.remove('wrong', 'has-val');
                             this.mathSteps[this.stage].q = null;
                             this.activate(`q-${this.stage}`);
@@ -1138,7 +1145,10 @@
                     }
                 } else {
                     this.mathSteps[this.stage].q = val;
-                    qBox.querySelector('.val').innerText = toPersian(val);
+                    const valSpan = qBox.querySelector('.val');
+                    if (valSpan) valSpan.innerText = toPersian(val);
+                    else qBox.innerText = toPersian(val);
+                    
                     qBox.classList.add('has-val');
                     qBox.classList.remove('wrong');
                     
@@ -1184,11 +1194,20 @@
                 if (app.state.isTutorial) targetId = n.targetId; 
 
                 const el = getEl(targetId); 
-                el.innerText = toPersian(app.state.isTutorial ? n.val : n); 
-                el.classList.add('has-val'); el.classList.remove('wrong');
-                
                 const [type, stg, idx] = targetId.split('-'); const s = parseInt(stg); const i = parseInt(idx);
                 const val = app.state.isTutorial ? n.val : n;
+
+                if (type === 'q') {
+                    const valSpan = el.querySelector('.val');
+                    if (valSpan) {
+                        valSpan.innerText = toPersian(val);
+                    } else {
+                        el.innerText = toPersian(val);
+                    }
+                } else {
+                    el.innerText = toPersian(val);
+                }
+                el.classList.add('has-val'); el.classList.remove('wrong');
 
                 if (type === 'q') {
                      if(app.state.isTutorial) {
@@ -1219,7 +1238,9 @@
                         
                         const qBox = getEl(`q-${this.stage}`);
                         if (qBox) {
-                            qBox.querySelector('.val').innerText = '';
+                            const valSpan = qBox.querySelector('.val');
+                            if (valSpan) valSpan.innerText = '';
+                            else qBox.innerText = '';
                             qBox.classList.remove('has-val', 'wrong', 'correct', 'readonly');
                         }
                         
@@ -1259,11 +1280,19 @@
 
                 if(!this.activeBox) return;
                 const el = getEl(this.activeBox);
-                el.innerText = '';
-                el.classList.remove('has-val', 'wrong');
                 const [type, stg, idx] = this.activeBox.split('-');
                 const s = parseInt(stg);
                 const i = parseInt(idx);
+                
+                if (type === 'q') {
+                    const valSpan = el.querySelector('.val');
+                    if (valSpan) valSpan.innerText = '';
+                    else el.innerText = '';
+                } else {
+                    el.innerText = '';
+                }
+                el.classList.remove('has-val', 'wrong');
+                
                 if(type === 'q') this.mathSteps[s].q = null;
                 else if(type === 'p') this.mathSteps[s].p[i] = '';
                 else if(type === 'r') this.mathSteps[s].r[i] = '';
